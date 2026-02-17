@@ -1,0 +1,91 @@
+﻿@page "/manageusers"
+@using Microsoft.AspNetCore.Authorization
+@using System.Security.Claims
+@using TaskFlow.UI.Data
+@using TaskFlow.UI.Models
+@using TaskFlow.UI.Models.Authorization
+@attribute [Authorize(Policy = Permissions.ManageUsers)]
+@inject UserRepository userRepository
+@inject UserRoleService RoleService
+@inject AuthenticationStateProvider AuthStateProvider
+@rendermode InteractiveServer
+
+<h3>ManageUsers </h3>
+
+@if (currentUser == null || currentUser.Identity?.IsAuthenticated != true)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Email</th>
+                <th>Roles</th>
+                <th>Assign Roles</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach(var user in users)
+            {
+                <tr>
+                    <td>@user.email</td>
+                    <td>@string.Join(", ", user.roles)</td>
+                    <td>
+                        <select @bind="user.selectedRole">
+                            <option value="">--Select--</option>
+                            <option value="Owner">Owner</option>
+                            <option value="Manager">Manager</option>
+                            <option value="Creator">Creator</option>
+                            <option value="Reader">Reader</option>
+                        </select>
+                        <button type="button" @onclick="() => SaveRole(user)"> Save </button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    
+}
+@code {
+
+
+
+    List<User> users = new();
+    ClaimsPrincipal? currentUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        currentUser = authState.User;
+
+        users = await userRepository.GetAllAsync();
+    }
+    async Task SaveRole(User user)
+    {
+        
+
+        if (string.IsNullOrWhiteSpace(user.selectedRole))
+        {
+            Console.WriteLine("Role was empty.");
+            return;
+        }
+
+        await RoleService.AssignRoleAsync(user, user.selectedRole);
+
+        users = await userRepository.GetAllAsync();
+        StateHasChanged();
+    }
+
+    async Task AssignRole(User user, string role)
+    {
+        if (string.IsNullOrWhiteSpace(role))
+            return;
+
+        await RoleService.AssignRoleAsync(user, role);
+
+        users = await userRepository.GetAllAsync();
+
+    }
+}

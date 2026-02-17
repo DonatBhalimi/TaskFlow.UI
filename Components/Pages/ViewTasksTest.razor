@@ -1,0 +1,6 @@
+﻿@using Microsoft.AspNetCore.Authorization
+@using TaskFlow.UI.Models.Authorization
+@attribute [Authorize(Policy = Permissions.ViewTasks)]
+
+<h3>ViewTasks – AUTH OK</h3>
+<p>If you see this, ViewTasks permission works.</p>

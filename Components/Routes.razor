@@ -1,0 +1,16 @@
+﻿@using TaskFlow.UI.Components
+
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <div class="alert alert-warning">
+                    You must log in to access this page.
+                    <br/>
+                    <a href="/auth-debug">Go to login</a>
+                </div>
+            </NotAuthorized>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+</Router>

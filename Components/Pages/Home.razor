@@ -1,0 +1,43 @@
+﻿@page "/"
+@using TaskFlow.UI.Models.Authorization
+@inject HttpClient Http
+@inject NavigationManager Nav 
+@rendermode InteractiveServer
+
+<h1>Task Flow</h1>
+
+
+<p class="text-muted">Task and workflow management</p>
+
+<AuthorizeView Policy="@Permissions.ViewTasks">
+    <Authorized>
+        <p>You are signed in.</p>
+
+        <button class="btn btn-primary me-2" @onclick="GoTasks">
+            Go To Tasks
+        </button>
+
+        <button class="btn btn-outline-secondary" @onclick="Logout">
+            Log out
+        </button>
+    </Authorized>
+
+    <NotAuthorized>
+        <p>You are not signed in.</p>
+
+        <button class="btn btn-primary" @onclick="GoLogin">
+            Log In
+        </button>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code{
+
+    void GoTasks() => Nav.NavigateTo("/tasks");
+    void GoLogin() => Nav.NavigateTo("/auth-debug");
+    async Task Logout()
+    {
+        await Http.PostAsync("/logout", null);
+        Nav.NavigateTo("/",true);
+    }
+}

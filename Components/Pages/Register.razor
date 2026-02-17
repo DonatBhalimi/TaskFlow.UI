@@ -1,0 +1,41 @@
+﻿@page "/register"
+@using TaskFlow.UI.Models.Authorization
+
+@rendermode InteractiveServer
+
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<h3>Create Account</h3>
+
+
+@if (!string.IsNullOrEmpty(error))
+{
+    <p class="text-danger">@error</p>
+}
+
+<input @bind ="email" placeholder="Email"/>
+<br/>
+
+<input @bind = "password" type="password" placeholder="Password"/>
+<br/>
+
+<button @onclick="HandleRegister">Create Account</button>
+
+@code{
+    string email = "";
+    string password = "";
+    string? error;
+    async Task HandleRegister()
+    {
+        try
+        {
+            await Auth.RegisterAsync(email, password);
+            Nav.NavigateTo("/auth-debug");
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+}

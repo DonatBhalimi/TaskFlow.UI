@@ -1,0 +1,12 @@
+﻿@page "/createtasks"
+@using Microsoft.AspNetCore.Authorization
+@using TaskFlow.UI.Models.Authorization
+@attribute [Authorize(Policy = Permissions.CreateTasks)]
+
+<h3>Create Test - Auth OK</h3>
+
+<p>If you see this, Create Task permission works.</p>
+
+@code {
+
+}

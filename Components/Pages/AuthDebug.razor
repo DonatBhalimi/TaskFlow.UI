@@ -1,0 +1,31 @@
+﻿@page "/auth-debug"
+@using Microsoft.AspNetCore.Authentication.Cookies
+@using TaskFlow.UI.Models.Authorization
+@using Microsoft.AspNetCore.Authentication
+@inject NavigationManager Nav
+@inject AuthService Auth
+@rendermode InteractiveServer
+@inject IHttpContextAccessor HttpContextAccessor
+<h1>Login</h1>
+
+<form method="post" action="/login">
+    <input name="Email" placeholder="email" />
+    <input name="Password" type="password" placeholder="password" />
+    <button type="submit">Login</button>
+</form>
+
+
+
+<p>
+    <a href="/register">Create Account</a>
+</p>
+
+
+@code{
+
+    LogInRequestDTO loginModel = new();
+    string? error;
+
+    
+
+}

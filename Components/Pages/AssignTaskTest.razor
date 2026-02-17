@@ -1,0 +1,7 @@
+﻿@page "/tasks2"
+@using Microsoft.AspNetCore.Authorization
+@using TaskFlow.UI.Models.Authorization
+@attribute [Authorize(Policy = Permissions.AssignTasks)]
+
+<h3>AssignTasks – AUTH OK</h3>
+<p>If you see this, AssignTasks permission works.</p>
