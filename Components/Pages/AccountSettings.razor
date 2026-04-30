@@ -1,0 +1,130 @@
+﻿@page "/account-settings"
+@using MongoDB.Bson
+@using TaskFlow.UI.Data
+@using TaskFlow.UI.Models
+@inject AuthenticationStateProvider AuthStateProvider
+@inject UserRepository UserRepo
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<h3>Account Settings</h3>
+
+@if (currentUser == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <h5>Notification Preferences</h5>
+
+    <div class="form-check">
+        <input class="form-check-input"
+               type="checkbox"
+               id="inAppNotifications"
+               @bind="currentUser.InAppNotificationEnabled" />
+        <label class="form-check-label" for="inAppNotifications">
+            Enable in-app notifications
+        </label>
+    </div>
+
+    <div class="form-check">
+        <input class="form-check-input"
+               type="checkbox"
+               id="taskReminders"
+               @bind="currentUser.TaskReminderNotificationEnabled" />
+        <label class="form-check-label" for="taskReminders">
+            Task reminder notifications
+        </label>
+    </div>
+
+    <div class="form-check">
+        <input class="form-check-input"
+               type="checkbox"
+               id="deadlineApproaching"
+               @bind="currentUser.DeadlineApproachingNotificationsEnabled" />
+        <label class="form-check-label" for="deadlineApproaching">
+            Deadline approaching notifications
+        </label>
+    </div>
+    <div class="mt-2 mb-3">
+        <label class="form-label">Deadline approaching warning time</label>
+        <select class="form-select" @bind="currentUser.DeadlineApproachingMinutesBefore">
+            <option value="15">15 minutes before</option>
+            <option value="30">30 minutes before</option>
+            <option value="60">60 minutes before</option>
+            <option value="120">2 hours before</option>
+            <option value="1440">1 day before</option>
+        </select>
+    </div>
+
+    <div class="form-check">
+        <input class="form-check-input"
+               type="checkbox"
+               id="deadlineMissed"
+               @bind="currentUser.DeadlineMissedNotificationEnabled" />
+        <label class="form-check-label" for="deadlineMissed">
+            Missed deadline notifications
+        </label>
+    </div>
+
+    <div class="form-check">
+        <input class="form-check-input"
+               type="checkbox"
+               id="recurringCompletion"
+               @bind="currentUser.RecurringCompletionNotificationEnabled" />
+        <label class="form-check-label" for="recurringCompletion">
+            Recurring task completion notifications
+        </label>
+    </div>
+
+    <br />
+
+    <button class="btn btn-primary" @onclick="SaveSettings">
+        Save Settings
+    </button>
+
+    <button class="btn btn-outline-secondary ms-2" @onclick="GoHome">
+        Home
+    </button>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <p class="text-success mt-3">@message</p>
+    }
+}
+
+@code {
+    User? currentUser;
+    string message = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst("userId")?.Value;
+
+        if (string.IsNullOrWhiteSpace(userIdClaim))
+        {
+            Nav.NavigateTo("/auth-debug");
+            return;
+        }
+
+        var userId = ObjectId.Parse(userIdClaim);
+
+        currentUser = await UserRepo.GetByIdAsync(userId);
+    }
+
+    async Task SaveSettings()
+    {
+        if (currentUser == null)
+            return;
+
+        await UserRepo.UpdateNotificationPreferencesAsync(currentUser);
+
+        message = "Notification preferences saved.";
+    }
+
+    void GoHome()
+    {
+        Nav.NavigateTo("/");
+    }
+}

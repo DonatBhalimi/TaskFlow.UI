@@ -1,0 +1,108 @@
+﻿@page "/workspaces"
+@using MongoDB.Bson
+@using TaskFlow.UI.Authorization
+@using TaskFlow.UI.Data
+@using TaskFlow.UI.Models
+@using TaskFlow.UI.Models.Authorization
+@rendermode InteractiveServer
+@inject AuthenticationStateProvider AuthStateProvider
+@inject WorkspaceRepository WorkspaceRepo
+@inject NavigationManager Nav
+@inject WorkspaceAuthorizationService workAuth
+
+<h3>Workspaces</h3>
+
+
+<AuthorizeView>
+    <Authorized>
+        <div>
+            <input @bind="newWorkspaceName" placeholder="New workspace name" />
+            <button @onclick="CreateWorkspace">Create</button>
+        </div>
+    </Authorized>
+</AuthorizeView>
+
+<hr />
+
+@if(workspaces.Count == 0)
+{
+    <p>No workspaces yet.</p>
+}
+else
+{
+    <ul>
+        @foreach(var ws in workspaces)
+        {
+            <li>
+                <div>
+                    <button @onclick="() => SelectWorkSpace(ws.Id)"> @ws.Name </button>                
+                    <button @onclick="() => TasksInWorkspace(ws.Id)"> Tasks </button>
+
+                </div>
+                
+                
+            </li>
+        }
+    </ul>
+}
+<hr/>
+<button class="btn btn-primary" @onclick="GoToHomePage"> Home Page </button>
+<button class="btn btn-primary" @onclick="GoToAccountSettings"> Account Settings </button>
+
+@code {
+    void GoToHomePage() => Nav.NavigateTo("/");
+    void GoToAccountSettings() => Nav.NavigateTo("/account-settings");
+    List<Workspace> workspaces = new();
+    string newWorkspaceName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var userId = await GetCurrentUserId();
+        workspaces = await WorkspaceRepo.GetForUserId(userId);
+    }
+
+    async Task CreateWorkspace()
+    {
+        if (string.IsNullOrWhiteSpace(newWorkspaceName))
+        {
+            return;
+        }
+        var userId = await GetCurrentUserId();
+        var workspace = new Workspace
+        {
+            Name = newWorkspaceName,
+            OwnerUserId = userId,
+            Members = new List<WorkspaceMember>
+            {
+                new WorkspaceMember {
+                    UserId = userId,
+                    RoleCodes= new HashSet<string> {"ws.role.owner"},
+                    ActionCodes = new HashSet<string>()
+                }
+            }
+        };
+
+        await WorkspaceRepo.CreateAsync(workspace);
+        newWorkspaceName = string.Empty;
+
+        workspaces = await WorkspaceRepo.GetForUserId(userId);
+    }
+
+    void SelectWorkSpace(ObjectId workspaceId)
+    {
+        Nav.NavigateTo($"/workspace/{workspaceId}");
+    }
+    void TasksInWorkspace(ObjectId workspaceId)
+    {
+        Nav.NavigateTo($"/tasks?workspaceId={workspaceId}");
+    }
+    async Task<ObjectId> GetCurrentUserId()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var idClaim = authState.User.FindFirst("userId")?.Value;
+        if (string.IsNullOrWhiteSpace(idClaim))
+            throw new InvalidOperationException("Missing userId claim. User is not authenticated correctly.");
+
+        return ObjectId.Parse(idClaim);
+    }
+}

@@ -1,24 +1,106 @@
 ﻿@page "/tasks"
 @using Microsoft.AspNetCore.Authorization
+@using MongoDB.Bson
+@using TaskFlow.UI.Authorization
 @using TaskFlow.UI.Data
 @using TaskFlow.UI.Models
 @using TaskFlow.UI.Models.Authorization
+@using Microsoft.AspNetCore.Components.Forms
 @rendermode InteractiveServer
-@attribute [Authorize(Policy = Permissions.ViewTasks)]
 @inject TaskRepository TaskRepo
 @inject AuthenticationStateProvider AuthStateProvider
+@inject UserRepository userRepo
+@inject WorkspaceRepository workspaceRepo
+@inject NavigationManager Nav
+@inject WorkspaceAuthorizationService workauth
+@inject TaskReminderService ReminderService
 <h3>Tasks</h3>
 
-<AuthorizeView Policy="@Permissions.CreateTasks">
-
-    <Authorized>
+@if (workauth.HasAction(actions, WorkspaceFeatures.CreateTasks))
+{
+    <EditForm Model="this" OnSubmit="CreateTasks">
         <input @bind="newTitle" placeholder="Task title" />
         <input @bind="newDescription" placeholder="Desciption" />
-        <button type="button" @onclick="CreateTasks">Create</button>
-    </Authorized>
-</AuthorizeView>
+        <input type="datetime-local" @bind="newDueDate" />
+        <select @bind="newPriority">
+            <option value="Low">Low</option>
+            <option value="Normal">Normal</option>
+            <option value="High">High</option>
+        </select>
+        <select @bind="newStatus">
+            <option value="Open">Open</option>
+            <option value="In Progress">In Progress</option>
+            <option value="Done">Done</option>
+        </select>
+        <label>
+            <input type="checkbox" @bind="newIsRecurring"/>
+            Recurring Task
+        </label>
 
+        @if (newIsRecurring)
+        {
+            <select @bind="newRecurrenceType">
+                <option value="">-- Select Recurrence --</option>
+                <option value="Daily">Daily</option>
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+            </select>
+            <input type="number" @bind="newRecurrenceInterval" placeholder="Interval" /> 
+        }
 
+        <label>
+            <input type="checkbox" @bind="remind1HourBefore"/>
+            Remind 1 hour before
+        </label>
+        <label>
+            <input type="checkbox" @bind="remind1DayBefore"/>
+            Remind 1 day before
+        </label>
+        <div>
+            <input @bind="newCustomFieldName" placeholder="Custom field name" />
+            <input @bind="newCustomFieldValue" placeholder="Custom field value" />
+            <button type="button" @onclick="AddCustomField">Add Field</button>
+        </div>
+        @if(pendingCustomFields.Count> 0)
+        {
+            <ul>
+                @foreach(var field in pendingCustomFields)
+                {
+                    <li>@field.Name : @field.Value</li>
+                }
+            </ul>
+        }
+        <button type="submit">Create</button>
+     </EditForm>
+
+}
+
+<div>
+    <select @bind="taskViewMode">
+        <option value="Mine">My Tasks</option>
+        <option value="All">All Tasks</option>
+    </select>
+    <select @bind="statusFilter">
+        <option value="All">All Statuses</option>
+        <option value="Open">Open</option>
+        <option value="Done">Done</option>
+    </select>
+</div>
+<button type="button" @onclick="CheckRemindersNow">Check Reminders Now</button> 
+
+@if (dueReminderTasks.Count > 0)
+{
+    <ul>
+        @foreach (var task in dueReminderTasks)
+        {
+            <li>Reminder due: @task.Title</li>
+        }
+    </ul>
+}
+else
+{
+    <p>No reminders due right now.</p>
+}
 <hr/>
 
 <table>
@@ -27,57 +109,330 @@
             <th>Title</th>
             <th>Description</th>
             <th>Completed</th>
+            <th>Assign</th>
+            <th>Recurrence</th>
+            <th>Reminders</th>
         </tr>
     </thead>
     <tbody>
-        @foreach(var task in tasks)
+        @foreach(var task in FilteredTasks())
         {
             <tr>
                 <td>@task.Title</td>
-                <td>@task.Description</td>
                 <td>
-                    <input type="checkbox" checked="@task.IsCompleted" @onchange="() => ToggleComplete(task)" />
+                    @task.Description
+
+                    @if (task.CustomFields != null && task.CustomFields.Count > 0)
+                    {
+                        <ul>
+                            @foreach(var field in task.CustomFields)
+                            {
+                                <li>@field.Name : @field.Value</li>
+                            }
+                        </ul>
+                    }
+                    @if (IsOverdue(task))
+                    {
+                        <span style="color:red; margin-left:8px;">(Overdue)</span>
+                    }
+                </td>
+                <td>
+                    @if (workauth.HasAction(actions, WorkspaceFeatures.EditTasks) ||
+                                    workauth.HasAction(actions, WorkspaceFeatures.EditOwnTasks))
+                    {
+                        <input type="checkbox" checked="@task.IsCompleted"
+                               @onchange="() => ToggleComplete(task)" />
+                    }
+                    else
+                    {
+                        <input type="checkbox" checked="@task.IsCompleted" disabled />
+                    }
+                                       
+                </td>
+                <td>
+                    @if (actions.Contains(WorkspaceFeatures.AssignTasks))
+                    {
+                        <select value="@task.AssignedToUserId?.ToString()" @onchange="e => AssignTask(task,
+                                                                                                          e.Value?.ToString())">
+                    <option value="">--Assign--</option>
+                    @foreach (var user in users)
+                            {
+                                <option value="@user.Id.ToString()">@user.email</option>
+                            }
+                        </select>
+                    }
+                </td>
+                
+                <td>
+                    @if (task.IsRecurring)
+                    {
+                        <span>@task.RecurrenceType (@task.RecurrenceInterval)</span>
+                    }
+                    else
+                    {
+                        <span>One-time</span>
+                    }
+                </td>
+                <td>
+                    @if (task.ReminderMinutesBefore != null && task.ReminderMinutesBefore.Count > 0)
+                    {
+                        <span>@string.Join(", ", task.ReminderMinutesBefore.Select(r => $"{r} min"))</span>
+                    }
+                    else
+                    {
+                        <span>None</span>
+                    }
                 </td>
             </tr>
         }
     </tbody>
 </table>
+<hr />
+<button @onclick="GoBack" class="btn btn-primary"> Workspaces </button>
+<button @onclick="GoToNotifications" class="btn btn-primary"> Notifications </button>
 
 
 
 @code {
+    void GoBack() => Nav.NavigateTo("/workspaces");
+    void GoToNotifications() => Nav.NavigateTo("/notifications");
+    HashSet<string> actions = new();
+    ObjectId currentUserId;
+    ObjectId currentWorkspaceId;
+    DateTime? newDueDate;
+    List<User> users = new();
     List<TaskItem> tasks = new();
     string newTitle = string.Empty;
     string newDescription = string.Empty;
+    string newPriority = "Normal";
+    string newStatus = "Open";
+    bool newIsRecurring = false;
+    string newRecurrenceType = "";
+    int? newRecurrenceInterval = null;
+    bool remind1HourBefore = false;
+    bool remind1DayBefore = false;
+    string newCustomFieldName = string.Empty;
+    string newCustomFieldValue = string.Empty;
+    List<TaskCustomField> pendingCustomFields = new();
+    string taskViewMode = "Mine";
+    string statusFilter = "All";
+    List<TaskItem> dueReminderTasks = new();
 
+    [Parameter]
+    [SupplyParameterFromQuery]
+    public string? workspaceId { get; set; }
     protected override async Task OnInitializedAsync()
     {
-        tasks = await TaskRepo.GetAllAsync();
+        if (string.IsNullOrEmpty(workspaceId)) return;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst("userId")?.Value;
+        if (string.IsNullOrWhiteSpace(userId)) return;
+
+        currentUserId = ObjectId.Parse(userId);
+        currentWorkspaceId = ObjectId.Parse(workspaceId);
+
+        var workspace = await workspaceRepo.GetByIdAsync(currentWorkspaceId);
+        if (workspace == null)
+        {
+            Nav.NavigateTo("/accessdenied");
+            return;
+        }
+
+        actions = await workauth.GetEffectiveActionsAsync(workspace, currentUserId);
+
+        bool canSeeAll = actions.Contains(WorkspaceFeatures.ViewAllTasks);
+
+        tasks = await TaskRepo.GetForWorkspaceAsync(currentUserId,currentWorkspaceId, canSeeAll);
+        var allUsers = await userRepo.GetAllAsync();
+
+        users = allUsers.Where(u => workspace.Members.Any(m => m.UserId == u.Id))
+            .ToList();
+
     }
     async Task CreateTasks()
     {
+        if (!actions.Contains(WorkspaceFeatures.CreateTasks)) return;
+
+
         if (string.IsNullOrWhiteSpace(newTitle)) return;
+        if (string.IsNullOrWhiteSpace(workspaceId)) return;
+
+        if (newIsRecurring)
+        {
+            if (!newDueDate.HasValue) return;
+            if (string.IsNullOrWhiteSpace(newRecurrenceType)) return;
+        }
 
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var userIdClaim = authState.User.FindFirst("userId");
         if (userIdClaim == null) throw new Exception("UserId claim missing");
+        var wsId = MongoDB.Bson.ObjectId.Parse(workspaceId);
+        var reminders = new List<int>();
+        if (remind1HourBefore) reminders.Add(60);
+        if (remind1DayBefore) reminders.Add(1440);
 
         var task = new TaskItem
+        {
+            Title = newTitle,
+            Description = newDescription,
+            CreatedByUserId = ObjectId.Parse(userIdClaim!.Value),
+            WorkspaceId = wsId,
+            DueDate = newDueDate?.ToUniversalTime(),
+            Priority = newPriority,
+            Status = newStatus,
+            IsRecurring = newIsRecurring,
+            RecurrenceType = newRecurrenceType,
+            RecurrenceInterval = newRecurrenceInterval,
+            ReminderMinutesBefore = reminders,
+            CustomFields = pendingCustomFields.Select(cf => new TaskCustomField
             {
-                Title = newTitle,
-                Description = newDescription,
-                CreatedByUserId = MongoDB.Bson.ObjectId.Parse(userIdClaim!.Value)
-            };
+                Name = cf.Name,
+                Value = cf.Value
+            }).ToList()
+        };
 
         await TaskRepo.CreateAsync(task);
-        tasks = await TaskRepo.GetAllAsync();
+
+        var userClaim = authState.User.FindFirst("userId");
+        if (userClaim == null) return;
+
+        var userId = ObjectId.Parse(userClaim.Value);
+        bool canSeeAll = actions.Contains(WorkspaceFeatures.ViewAllTasks);
+
+        tasks = await TaskRepo.GetForWorkspaceAsync(userId, wsId, canSeeAll);
         newTitle = string.Empty;
         newDescription = string.Empty;
+        newDueDate = null;
+        newPriority = "Normal";
+        newStatus = "Open";
+        newIsRecurring = false;
+        newRecurrenceType = "";
+        newRecurrenceInterval = null;
+        remind1HourBefore = false;
+        remind1DayBefore = false;
+        newCustomFieldName = string.Empty;
+        newCustomFieldValue= string.Empty;
+        pendingCustomFields.Clear();
+    }
+    TaskItem? BuildNextReccuringTask(TaskItem completedTask)
+    {
+        if (!completedTask.IsRecurring) return null;
+        if (!completedTask.DueDate.HasValue) return null;
+        if (string.IsNullOrWhiteSpace(completedTask.RecurrenceType)) return null;
+        DateTime nextDueDate = completedTask.DueDate.Value;
+
+        switch (completedTask.RecurrenceType.Trim().ToLowerInvariant())
+        {
+            case "daily":
+                nextDueDate = completedTask.DueDate.Value.AddDays(completedTask.RecurrenceInterval ?? 1);
+                break;
+            case "weekly":
+                nextDueDate = completedTask.DueDate.Value.AddDays(7 * (completedTask.RecurrenceInterval ?? 1));
+                break;
+            case "monthly":
+                nextDueDate = completedTask.DueDate.Value.AddMonths(completedTask.RecurrenceInterval ?? 1);
+                break;
+
+            default:
+                return null;
+        }
+        return new TaskItem
+            {
+                Title = completedTask.Title,
+                Description = completedTask.Description,
+                CreatedByUserId = completedTask.CreatedByUserId,
+                AssignedToUserId = completedTask.AssignedToUserId,
+                WorkspaceId = completedTask.WorkspaceId,
+                DueDate = nextDueDate,
+                Priority = completedTask.Priority,
+                Status = "Open",
+                IsCompleted = false,
+                IsRecurring = completedTask.IsRecurring,
+                RecurrenceType = completedTask.RecurrenceType,
+                RecurrenceInterval = completedTask.RecurrenceInterval,
+                ReminderMinutesBefore = completedTask.ReminderMinutesBefore?.ToList() ?? new List<int>(),
+                CustomFields = completedTask.CustomFields? 
+                .Select(cf => new TaskCustomField
+                {
+                    Name = cf.Name,
+                    Value = cf.Value
+                }).ToList() ?? new List<TaskCustomField>()
+            };
     }
     async Task ToggleComplete(TaskItem task)
     {
+        if (!actions.Contains(WorkspaceFeatures.EditTasks) &&
+        !(actions.Contains(WorkspaceFeatures.EditOwnTasks) &&
+        task.CreatedByUserId == currentUserId)) return;
+
+        bool wasComletedBefore = task.IsCompleted;
+
         task.IsCompleted = !task.IsCompleted;
         await TaskRepo.UpdateAsync(task);
+        if(!wasComletedBefore && task.IsCompleted && task.IsRecurring)
+        {
+            var nextTask = BuildNextReccuringTask(task);
+            if (nextTask != null)
+            {
+                await TaskRepo.CreateAsync(nextTask);
+            }
+        }
+        bool canSeeAll = actions.Contains(WorkspaceFeatures.ViewAllTasks);
+        tasks = await TaskRepo.GetForWorkspaceAsync(currentUserId, currentWorkspaceId, canSeeAll);
+    }
+    async Task AssignTask(TaskItem task,string? userId)
+    {
+        if (string.IsNullOrEmpty(userId)) return;
+
+        task.AssignedToUserId = ObjectId.Parse(userId);
+        await TaskRepo.UpdateAsync(task);
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var currentUserId = MongoDB.Bson.ObjectId.Parse(
+            authState.User.FindFirst("userId")!.Value);
+
+        if (string.IsNullOrEmpty(workspaceId)) return;
+        var wsId = ObjectId.Parse(workspaceId);
+        bool canSeeAll = actions.Contains(WorkspaceFeatures.ViewAllTasks);
+
+
+        tasks = await TaskRepo.GetForWorkspaceAsync(currentUserId, wsId, canSeeAll);
+    }
+    void AddCustomField()
+    {
+        if (string.IsNullOrWhiteSpace(newCustomFieldName)) return;
+        if (string.IsNullOrWhiteSpace(newCustomFieldValue)) return;
+
+        pendingCustomFields.Add(new TaskCustomField
+            {
+                Name = newCustomFieldName.Trim(),
+                Value = newCustomFieldValue.Trim()
+            });
+        newCustomFieldName = string.Empty;
+        newCustomFieldValue = string.Empty;
+    }
+    bool IsOverdue(TaskItem task)
+    {
+        return task.DueDate.HasValue
+            && task.DueDate.Value.Date < DateTime.UtcNow.Date
+            && !task.IsCompleted;
+    }
+
+    IEnumerable<TaskItem> FilteredTasks()
+    {
+        IEnumerable<TaskItem> result = tasks;
+        if (taskViewMode == "Mine")
+        {
+            result = result.Where(tasks => tasks.CreatedByUserId == currentUserId || tasks.AssignedToUserId == currentUserId);
+        }
+        if (statusFilter == "Open") result.Where(t => !t.IsCompleted);
+        else if (statusFilter == "DOne") result.Where(tasks => tasks.IsCompleted);
+
+        return result;
+    }
+    void CheckRemindersNow()
+    {
+        dueReminderTasks = ReminderService.GetTasksNeedingReminder(tasks, DateTime.UtcNow);
     }
 
 }

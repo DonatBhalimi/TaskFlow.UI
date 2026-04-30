@@ -1,0 +1,68 @@
+﻿@page "/notifications"
+@using MongoDB.Bson
+@using TaskFlow.UI.Data
+@using TaskFlow.UI.Models
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NotificationRepository NotificationRepo
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<h3>Notifications</h3>
+
+@if (notifications.Count == 0)
+{
+    <p>No unread notifications.</p>
+}
+else
+{
+    <ul>
+        @foreach (var notification in notifications)
+        {
+            <li>
+                <strong>@notification.Message</strong>
+                <br />
+                <small>@notification.CreatedAtUtc.ToLocalTime()</small>
+                <br />
+                <button @onclick="() => MarkAsRead(notification.Id)">
+                    Mark as read
+                </button>
+            </li>
+        }
+    </ul>
+}
+
+<hr />
+<button @onclick="GoHome">Home</button>
+
+@code {
+    List<Notification> notifications = new();
+    ObjectId currentUserId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst("userId")?.Value;
+
+        if (string.IsNullOrWhiteSpace(userIdClaim))
+        {
+            Nav.NavigateTo("/auth-debug");
+            return;
+        }
+
+        currentUserId = ObjectId.Parse(userIdClaim);
+
+        notifications = await NotificationRepo.GetUnreadForUserAsync(currentUserId);
+    }
+
+    async Task MarkAsRead(ObjectId notificationId)
+    {
+        await NotificationRepo.MarkAsReadAsync(notificationId);
+
+        notifications = await NotificationRepo.GetUnreadForUserAsync(currentUserId);
+    }
+
+    void GoHome()
+    {
+        Nav.NavigateTo("/");
+    }
+}

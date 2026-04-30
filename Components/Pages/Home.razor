@@ -1,7 +1,13 @@
 ﻿@page "/"
+@using MongoDB.Bson
+@using TaskFlow.UI.Authorization
+@using TaskFlow.UI.Data
 @using TaskFlow.UI.Models.Authorization
 @inject HttpClient Http
-@inject NavigationManager Nav 
+@inject NavigationManager Nav
+@inject WorkspaceAuthorizationService workAuth
+@inject NotificationRepository NotificationRepo
+@inject AuthenticationStateProvider AuthStateProvider
 @rendermode InteractiveServer
 
 <h1>Task Flow</h1>
@@ -9,14 +15,18 @@
 
 <p class="text-muted">Task and workflow management</p>
 
-<AuthorizeView Policy="@Permissions.ViewTasks">
+<AuthorizeView >
     <Authorized>
         <p>You are signed in.</p>
 
-        <button class="btn btn-primary me-2" @onclick="GoTasks">
-            Go To Tasks
+        <button class="btn btn-primary me-2" @onclick="GoWorkspace">
+            Go To Workspaces
         </button>
-
+        <br />
+        <button class="btn btn-outline-primary me-2" @onclick="GoNotifications">
+            Notifications (@unreadNotificationCount)
+        </button>
+        <br />
         <button class="btn btn-outline-secondary" @onclick="Logout">
             Log out
         </button>
@@ -31,13 +41,40 @@
     </NotAuthorized>
 </AuthorizeView>
 
-@code{
+<AuthorizeView >
+    <Authorized>
+        <div class="mt-3">
+        <button class="btn btn-primary" @onclick="ManageUsers"> Manage Users </button>
+        </div>
+    </Authorized>
+</AuthorizeView>
 
+
+@code {
+    long unreadNotificationCount = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst("userId")?.Value;
+
+        if (string.IsNullOrWhiteSpace(userIdClaim))
+            return;
+
+        var userId = ObjectId.Parse(userIdClaim);
+
+        unreadNotificationCount = await NotificationRepo.GetUnreadCountForUserAsync(userId);
+    }
+
+    void ManageUsers() => Nav.NavigateTo("/manageusers");
+    void GoWorkspace() => Nav.NavigateTo("/workspaces");
     void GoTasks() => Nav.NavigateTo("/tasks");
     void GoLogin() => Nav.NavigateTo("/auth-debug");
+    void GoNotifications() => Nav.NavigateTo("/notifications");
+
     async Task Logout()
     {
         await Http.PostAsync("/logout", null);
-        Nav.NavigateTo("/",true);
+        Nav.NavigateTo("/auth-debug", true);
     }
 }

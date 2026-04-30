@@ -4,11 +4,11 @@
 @using TaskFlow.UI.Data
 @using TaskFlow.UI.Models
 @using TaskFlow.UI.Models.Authorization
-@attribute [Authorize(Policy = Permissions.ManageUsers)]
 @inject UserRepository userRepository
 @inject UserRoleService RoleService
 @inject AuthenticationStateProvider AuthStateProvider
 @rendermode InteractiveServer
+@inject NavigationManager Nav
 
 <h3>ManageUsers </h3>
 
@@ -31,14 +31,13 @@ else
             {
                 <tr>
                     <td>@user.email</td>
-                    <td>@string.Join(", ", user.roles)</td>
+                    <td>@string.Join(", ", user.RoleCodes)</td>
                     <td>
+
                         <select @bind="user.selectedRole">
                             <option value="">--Select--</option>
-                            <option value="Owner">Owner</option>
-                            <option value="Manager">Manager</option>
-                            <option value="Creator">Creator</option>
-                            <option value="Reader">Reader</option>
+                            <option value="role.superChief">Owner</option>
+                            <option value="role.orgowner">Manager</option>
                         </select>
                         <button type="button" @onclick="() => SaveRole(user)"> Save </button>
                     </td>
@@ -46,9 +45,10 @@ else
             }
         </tbody>
     </table>
-    
+    <button @onclick="GoHome" class="btn btn-primary">Home Page</button>
 }
 @code {
+    void GoHome() => Nav.NavigateTo("/");
 
 
 
@@ -64,18 +64,21 @@ else
     }
     async Task SaveRole(User user)
     {
-        
+
 
         if (string.IsNullOrWhiteSpace(user.selectedRole))
         {
             Console.WriteLine("Role was empty.");
             return;
         }
+        user.RoleCodes.Clear();
 
-        await RoleService.AssignRoleAsync(user, user.selectedRole);
+        user.RoleCodes.Add(user.selectedRole);
 
+        await userRepository.UpdateAsync(user);
         users = await userRepository.GetAllAsync();
         StateHasChanged();
+
     }
 
     async Task AssignRole(User user, string role)

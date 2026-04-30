@@ -1,0 +1,188 @@
+﻿@page "/workspace/{workspaceId}"
+@using MongoDB.Bson
+@using TaskFlow.UI.Authorization
+@using TaskFlow.UI.Data
+@using TaskFlow.UI.Models
+@inject AuthenticationStateProvider AuthStateProvider
+@inject WorkspaceRepository workspaceRepo
+@inject UserRepository userRepo 
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+@inject WorkspaceAuthorizationService workAuth
+<h3>Workspace Details</h3>
+
+@if(currentWorkspace == null)
+{
+    <p>Loading...</p>
+}
+else
+{
+    <h4>@currentWorkspace.Name</h4>
+    <br />
+    <h5>Members</h5>
+    <ul>
+        @foreach (var member in workspaceMembers)
+        {
+            <li>
+                @member.email 
+                @foreach(var feature in AllWorkspaceFeatures)
+                {
+                    <label>
+                        <input type="checkbox"
+                            checked="@HasFeature(member.Id,feature)"
+                            @onchange="e => ToggleFeature(member.Id, feature, (bool)e.Value)""/>
+                            @feature
+                    </label>
+                }
+                @if(features.Contains(WorkspaceFeatures.MembersRemove))
+                {
+                    <button class="btn btn-sm btn-danger" @onclick="() => RemoveMember(member.Id)"> Remove </button>
+                }
+            </li>
+            
+        }
+    </ul>
+
+    @if (features.Contains(WorkspaceFeatures.MembersInvite))
+    {
+        <hr/>
+        <h6>Add Member</h6>
+        <select @bind="selectedUserId">
+            <option value="">
+                -- Select User -- 
+            </option>
+            @foreach (var user in usersNotInWorkspace)
+            {
+                <option value="@user.Id.ToString()">@user.email</option>
+            }
+        </select>
+        <select @bind="selectedRoleCode">
+            <option value="ws.role.reader">Reader</option>
+            <option value="ws.role.creator">Creator</option>
+            <option value="ws.role.manager">Manager</option>
+            <option value="ws.role.owner">Owner</option>
+        </select>
+        <button class="btn btn-sm btn-primary" @onclick="AddMember"> Add Member </button>
+    }
+}
+
+<hr /> 
+<button @onclick="GoBack" class="btn btn-primary"> Workspaces </button>
+
+@code {
+    List<string> AllWorkspaceFeatures = new()
+    {
+        WorkspaceFeatures.ViewTasks,
+        WorkspaceFeatures.ViewAllTasks,
+        WorkspaceFeatures.CreateTasks,
+        WorkspaceFeatures.EditTasks,
+        WorkspaceFeatures.EditOwnTasks,
+        WorkspaceFeatures.AssignTasks,
+        WorkspaceFeatures.MembersInvite,
+        WorkspaceFeatures.MembersRemove,
+        WorkspaceFeatures.MembersChangeRole
+    };
+    [Parameter]
+    public string workspaceId { get; set; } = default;
+    void GoBack() => Nav.NavigateTo("/workspaces", forceLoad: true);
+    Workspace? currentWorkspace;
+    List<User> workspaceMembers = new();
+    List<User> usersNotInWorkspace = new();
+    string? selectedUserId;
+    HashSet<string> features = new();
+    ObjectId currentUserId;
+    string selectedRoleCode = "ws.role.reader";
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(workspaceId)) return;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userIdClaim = authState.User.FindFirst("userId")?.Value;
+
+        if (string.IsNullOrWhiteSpace(userIdClaim)) return;
+        var wsId = ObjectId.Parse(workspaceId);
+
+        currentWorkspace = await workspaceRepo.GetByIdAsync(wsId);
+        if (currentWorkspace == null)
+        {
+            Nav.NavigateTo("/accessdenied");
+            return;
+        }
+        currentUserId = ObjectId.Parse(userIdClaim);
+
+        features = await workAuth.GetEffectiveActionsAsync(currentWorkspace, currentUserId);
+        await LoadUsers();
+
+    }
+    bool HasFeature(ObjectId userId, string feature)
+    {
+        return currentWorkspace!.Members
+            .First(m => m.UserId == userId)
+            .ActionCodes.Contains(feature);
+    }
+    async Task ToggleFeature(ObjectId userId, string feature, bool enabled)
+    {
+        if (!features.Contains(WorkspaceFeatures.MembersChangeRole)) return;
+        await workspaceRepo.UpdateMemberFeatureAsync(
+            currentWorkspace!.Id,
+            userId,
+            feature,
+            enabled
+        );
+        await ReloadWorkspace();
+    }
+    async Task LoadUsers()
+    {
+        var allUsers = await userRepo.GetAllAsync();
+
+        workspaceMembers = allUsers
+        .Where(u => currentWorkspace!.Members.Any(m => m.UserId == u.Id)).ToList();
+
+        usersNotInWorkspace = allUsers
+        .Where(u => !currentWorkspace.Members.Any(m => m.UserId == u.Id)).ToList();
+    }
+    async Task AddMember()
+    {
+        if (!features.Contains(WorkspaceFeatures.MembersInvite)) return;
+
+        if (string.IsNullOrWhiteSpace(selectedUserId) || currentWorkspace == null)
+            return;
+
+        var userId = ObjectId.Parse(selectedUserId);
+
+        await workspaceRepo.AddMemberAsync(currentWorkspace.Id, userId,selectedRoleCode);
+        selectedUserId = null;
+        await ReloadWorkspace();
+    }
+    async Task RemoveMember(ObjectId userId)
+    {
+        if (!features.Contains(WorkspaceFeatures.MembersRemove)) return;
+
+        if (currentWorkspace == null) return;
+
+        await workspaceRepo.RemoveMemberAsync(currentWorkspace.Id, userId);
+        await ReloadWorkspace();
+    }
+
+    async Task<ObjectId> GetCurrentUserId()
+    {
+        var wsId = ObjectId.Parse(workspaceId);
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst("userId")?.Value;
+        if (string.IsNullOrWhiteSpace(userId)) throw new InvalidOperationException("Missing userId claim");
+        currentWorkspace = await workspaceRepo.GetByIdAsync(wsId);
+        return ObjectId.Parse(userId);
+    }
+    async Task ReloadWorkspace()
+    {
+        if (currentWorkspace == null) return;
+
+        currentWorkspace = await workspaceRepo.GetByIdAsync(currentWorkspace!.Id);
+
+        if (currentWorkspace == null) return;
+
+        
+        await LoadUsers();
+    }
+    
+}

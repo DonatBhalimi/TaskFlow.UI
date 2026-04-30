@@ -18,9 +18,11 @@ namespace TaskFlow.UI.Models.Authorization
             if (string.IsNullOrWhiteSpace(role))
                 return;
 
-            user.roles = new List<string> { role };
+            var normalized = role.Trim().ToLowerInvariant();
 
-            var result = await _users.UpdateAsync(user);
+            user.RoleCodes.Add(normalized);
+
+            await _users.UpdateAsync(user);
 
 
         }
@@ -29,9 +31,12 @@ namespace TaskFlow.UI.Models.Authorization
 
         public async Task RemoveRoleAsync(User user,string role)
         {
-            if (user.roles.Contains(role))
+            if (string.IsNullOrWhiteSpace(role)) return;
+
+            var normalized = role.Trim().ToLowerInvariant();
+
+            if (user.RoleCodes.Remove(normalized))
             {
-                user.roles.Remove(role);
                 await _users.UpdateAsync(user);
             }
         }
